@@ -35,8 +35,8 @@ const defaultRules = [
   { id: 'rule-entry-1', category: 'Entry', market: 'All markets', name: 'No chasing extended price', description: 'Skip the entry if price has already moved beyond the planned entry zone.', severity: 'Guideline', reason: 'Improve entry quality', active: true },
   { id: 'rule-mind-1', category: 'Psychology', market: 'All markets', name: 'Stop after daily loss limit', description: 'Do not open another position after reaching the defined daily loss limit.', severity: 'Hard rule', reason: 'Prevent revenge trading', active: true }
 ];
-const CONSENT_VERSION = '1.0';
-const APP_VERSION = 'Beta 0.2.0';
+const CONSENT_VERSION = '2.0';
+const APP_VERSION = 'Beta 0.3.0';
 const GITHUB_REPOSITORY = 'https://github.com/Nardo-code/elog-beta';
 const defaultProfile = { name: 'Dimechio', currency: 'USD', timezone: 'America/Bogota', avatar: '' };
 const defaultAccounts = [{ id: 'account-primary', name: 'Main trading', broker: '', startingBalance: 25000, currency: 'USD' }];
@@ -1107,6 +1107,64 @@ async function derivePassword(password, salt) {
   return bytesToBase64(new Uint8Array(bits));
 }
 
+const PASSWORD_CREDENTIAL_VERSION = 2;
+const PASSWORD_ITERATIONS = 210000;
+const PASSWORD_MARKER = 'eLOG device password verified';
+
+async function derivePasswordKey(password, salt, iterations = PASSWORD_ITERATIONS) {
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: base64ToBytes(salt), iterations, hash: 'SHA-256' },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function createPasswordCredentials(password) {
+  const salt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await derivePasswordKey(password, salt);
+  const encryptedMarker = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    new TextEncoder().encode(PASSWORD_MARKER)
+  );
+  return {
+    version: PASSWORD_CREDENTIAL_VERSION,
+    iterations: PASSWORD_ITERATIONS,
+    salt,
+    iv: bytesToBase64(iv),
+    verifier: bytesToBase64(new Uint8Array(encryptedMarker))
+  };
+}
+
+async function verifyDevicePassword(password, credentials = securityCredentials) {
+  if (!credentials?.salt || typeof password !== 'string') return false;
+  if (credentials.version === PASSWORD_CREDENTIAL_VERSION && credentials.iv && credentials.verifier) {
+    try {
+      const key = await derivePasswordKey(password, credentials.salt, Number(credentials.iterations) || PASSWORD_ITERATIONS);
+      const marker = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: base64ToBytes(credentials.iv) },
+        key,
+        base64ToBytes(credentials.verifier)
+      );
+      return new TextDecoder().decode(marker) === PASSWORD_MARKER;
+    } catch {
+      return false;
+    }
+  }
+  if (!credentials.hash) return false;
+  const legacyHash = await derivePassword(password, credentials.salt);
+  const valid = legacyHash === credentials.hash;
+  if (valid) {
+    securityCredentials = await createPasswordCredentials(password);
+    localStorage.setItem('edgelog-security', JSON.stringify(securityCredentials));
+  }
+  return valid;
+}
+
 function updateSecurityUI() {
   const enabled = Boolean(securityCredentials);
   $('#security-status-dot').classList.toggle('enabled', enabled);
@@ -1149,12 +1207,9 @@ $('#security-form').addEventListener('submit', async event => {
   submit.textContent = 'Securing...';
   try {
     if (securityCredentials) {
-      const currentHash = await derivePassword(currentPassword, securityCredentials.salt);
-      if (currentHash !== securityCredentials.hash) { toast('Current password is incorrect'); return; }
+      if (!await verifyDevicePassword(currentPassword)) { toast('Current password is incorrect'); return; }
     }
-    const salt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
-    const hash = await derivePassword(newPassword, salt);
-    securityCredentials = { salt, hash };
+    securityCredentials = await createPasswordCredentials(newPassword);
     localStorage.setItem('edgelog-security', JSON.stringify(securityCredentials));
     sessionStorage.setItem('edgelog-unlocked', 'true');
     event.target.reset();
@@ -1175,8 +1230,7 @@ $('#unlock-form').addEventListener('submit', async event => {
   submit.disabled = true;
   submit.textContent = 'Checking...';
   try {
-    const enteredHash = await derivePassword(event.target.elements.password.value, securityCredentials.salt);
-    if (enteredHash === securityCredentials.hash) {
+    if (await verifyDevicePassword(event.target.elements.password.value)) {
       sessionStorage.setItem('edgelog-unlocked', 'true');
       hideAppLock();
     } else {
@@ -1504,6 +1558,83 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 }
 updateInstallStatus();
 
+const CLOUD_WORKSPACE_KEYS = [
+  'edgelog-trades', 'edgelog-setup-templates', 'edgelog-futures-contracts',
+  'edgelog-trading-sessions', 'edgelog-trading-rules', 'edgelog-default-session',
+  'edgelog-profile', 'edgelog-accounts', 'edgelog-cash-adjustments',
+  'edgelog-consent', 'edgelog-sidebar-compact', 'edgelog-tab-animations'
+];
+
+function cloudWorkspacePayload() {
+  return {
+    format: 1,
+    appVersion: APP_VERSION,
+    savedAt: new Date().toISOString(),
+    items: Object.fromEntries(CLOUD_WORKSPACE_KEYS
+      .filter(key => localStorage.getItem(key) !== null)
+      .map(key => [key, localStorage.getItem(key)]))
+  };
+}
+
+function createCloudSafetyBackup(name = 'Before cloud restore') {
+  const backups = getDeviceBackups();
+  backups.unshift({ id: `backup-${Date.now()}`, name, createdAt: new Date().toISOString(), items: currentWorkspaceItems() });
+  localStorage.setItem(BACKUP_KEY, JSON.stringify(backups.slice(0, 5)));
+}
+
+async function setInitialDevicePassword(password) {
+  if (securityCredentials) return true;
+  if (typeof password !== 'string' || password.length < 8) throw new Error('Use at least 8 characters');
+  securityCredentials = await createPasswordCredentials(password);
+  localStorage.setItem('edgelog-security', JSON.stringify(securityCredentials));
+  sessionStorage.setItem('edgelog-unlocked', 'true');
+  updateSecurityUI();
+  return true;
+}
+
+function saveCloudConsent(choices) {
+  privacyConsent = {
+    version: CONSENT_VERSION,
+    savedAt: new Date().toISOString(),
+    essential: true,
+    analytics: Boolean(choices.analytics),
+    diagnostics: Boolean(choices.diagnostics),
+    tradeInsights: false,
+    marketing: Boolean(choices.marketing)
+  };
+  localStorage.setItem('edgelog-consent', JSON.stringify(privacyConsent));
+  renderPrivacySummary();
+}
+
+window.eLOGCloudBridge = {
+  appVersion: APP_VERSION,
+  hasDevicePassword: () => Boolean(securityCredentials),
+  getConsent: () => privacyConsent ? { ...privacyConsent } : null,
+  getDisplayName: () => userProfile.name || 'Trader',
+  getWorkspacePayload: cloudWorkspacePayload,
+  createSafetyBackup: createCloudSafetyBackup,
+  applyWorkspacePayload(payload) {
+    if (!payload || payload.format !== 1 || !payload.items || typeof payload.items !== 'object') throw new Error('Invalid cloud workspace');
+    createCloudSafetyBackup('Before cloud restore');
+    CLOUD_WORKSPACE_KEYS.forEach(key => localStorage.removeItem(key));
+    Object.entries(payload.items).forEach(([key, value]) => {
+      if (CLOUD_WORKSPACE_KEYS.includes(key) && typeof value === 'string') localStorage.setItem(key, value);
+    });
+    window.location.reload();
+  },
+  setInitialDevicePassword,
+  saveConsent: saveCloudConsent,
+  showConsent,
+  toast,
+  beginApp() {
+    $('#onboarding-overlay')?.classList.remove('visible');
+    $('#onboarding-overlay')?.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    setTimeout(animateBrand, 220);
+    if (!localStorage.getItem('edgelog-mk1-guide-seen')) setTimeout(openGuide, 450);
+  }
+};
+
 renderFuturesSettings();
 renderTradingSessions();
 renderAccountSettings();
@@ -1517,9 +1648,10 @@ applyMotionSetting();
 updateCustomRangeVisibility();
 selectMarket('Stocks');
 render();
-if (securityCredentials && sessionStorage.getItem('edgelog-unlocked') !== 'true') showAppLock();
+const onboardingComplete = Boolean(localStorage.getItem('edgelog-storage-mode'));
+if (securityCredentials && onboardingComplete && sessionStorage.getItem('edgelog-unlocked') !== 'true') showAppLock();
 else {
-  maybeShowConsent();
-  if (privacyConsent?.version === CONSENT_VERSION) setTimeout(animateBrand, 500);
-  if (privacyConsent?.version === CONSENT_VERSION && !localStorage.getItem('edgelog-mk1-guide-seen')) setTimeout(openGuide, 650);
+  if (onboardingComplete) maybeShowConsent();
+  if (onboardingComplete && privacyConsent?.version === CONSENT_VERSION) setTimeout(animateBrand, 500);
+  if (onboardingComplete && privacyConsent?.version === CONSENT_VERSION && !localStorage.getItem('edgelog-mk1-guide-seen')) setTimeout(openGuide, 650);
 }
