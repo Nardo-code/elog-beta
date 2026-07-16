@@ -36,9 +36,9 @@ const defaultRules = [
   { id: 'rule-mind-1', category: 'Psychology', market: 'All markets', name: 'Stop after daily loss limit', description: 'Do not open another position after reaching the defined daily loss limit.', severity: 'Hard rule', reason: 'Prevent revenge trading', active: true }
 ];
 const CONSENT_VERSION = '2.0';
-const APP_VERSION = 'Beta 0.3.0';
+const APP_VERSION = 'Beta 0.3.1';
 const GITHUB_REPOSITORY = 'https://github.com/Nardo-code/elog-beta';
-const defaultProfile = { name: 'Dimechio', currency: 'USD', timezone: 'America/Bogota', avatar: '' };
+const defaultProfile = { name: 'Trader', currency: 'USD', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', avatar: '' };
 const defaultAccounts = [{ id: 'account-primary', name: 'Main trading', broker: '', startingBalance: 25000, currency: 'USD' }];
 
 const $ = selector => document.querySelector(selector);
@@ -411,7 +411,7 @@ function renderAccountSettings() {
   const form = $('#profile-form');
   form.elements.name.value = userProfile.name || '';
   form.elements.currency.value = userProfile.currency || 'USD';
-  form.elements.timezone.value = userProfile.timezone || 'America/Bogota';
+  form.elements.timezone.value = userProfile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const profileName = $('.profile strong');
   profileName.textContent = userProfile.name || 'Trader';
   const hour = new Date().getHours();

@@ -14,7 +14,9 @@
   const LAST_HASH_KEY = 'edgelog-cloud-last-hash';
   const LAST_SERVER_KEY = 'edgelog-cloud-last-server-updated';
   const LAST_REVISION_KEY = 'edgelog-cloud-last-revision';
+  const DELETE_PENDING_KEY = 'edgelog-cloud-delete-pending';
   const SYNC_INTERVAL = 60000;
+  const PUBLIC_CLOUD_SIGNIN_LOCKED = true;
 
   let session = null;
   let cloudReady = false;
@@ -81,9 +83,13 @@
     const cloudRadio = $('#cloud-choice-card input');
     const status = $('#cloud-choice-status');
     if (!cloudRadio || !status) return;
-    cloudRadio.disabled = !cloudReady;
-    status.textContent = cloudReady ? 'Available' : !schemaReady ? 'Database setup required' : !googleEnabled ? 'Google setup required' : 'Temporarily unavailable';
-    status.classList.toggle('ready', cloudReady);
+    const choiceCopy = $('#cloud-choice-card span');
+    choiceCopy.querySelector('strong').textContent = 'Google Drive backup';
+    choiceCopy.querySelector('small').textContent = 'Beta #2 will ask permission to save only eLOG app data in your Google Drive. It will not browse personal Drive files.';
+    cloudRadio.disabled = PUBLIC_CLOUD_SIGNIN_LOCKED || !cloudReady;
+    $('#cloud-choice-card').classList.toggle('feature-locked', PUBLIC_CLOUD_SIGNIN_LOCKED);
+    status.textContent = PUBLIC_CLOUD_SIGNIN_LOCKED ? 'Beta #2 · Locked preview' : cloudReady ? 'Available' : !schemaReady ? 'Database setup required' : !googleEnabled ? 'Google setup required' : 'Temporarily unavailable';
+    status.classList.toggle('ready', !PUBLIC_CLOUD_SIGNIN_LOCKED && cloudReady);
     const selectedMode = $('#onboarding-form input[name="storageMode"]:checked')?.value || 'local';
     $('#onboarding-data-notice').innerHTML = dataNotice(selectedMode);
   }
@@ -111,6 +117,7 @@
   }
 
   async function signInWithGoogle() {
+    if (PUBLIC_CLOUD_SIGNIN_LOCKED) throw new Error('Google sign-in is a locked preview during this beta stage');
     if (!client || !cloudReady) throw new Error('Cloud sign-in is not ready yet');
     const redirectTo = config.appUrl;
     const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
@@ -139,7 +146,7 @@
   }
 
   async function showGoogleQuickSignIn() {
-    if (!client || !cloudReady || session?.user || storageMode() !== 'cloud' || !config.googleClientId) return false;
+    if (PUBLIC_CLOUD_SIGNIN_LOCKED || !client || !cloudReady || session?.user || storageMode() !== 'cloud' || !config.googleClientId) return false;
     const identity = await waitForGoogleIdentity();
     if (!identity) return false;
     const [nonce, hashedNonce] = await generateGoogleNonce();
@@ -295,14 +302,18 @@
   function renderCloudPanel(statusOverride = '') {
     const mode = storageMode();
     const signedIn = Boolean(session?.user);
+    $('#workspace-mode-dot').classList.toggle('cloud-connected', mode === 'cloud' && signedIn);
+    $('#workspace-mode-dot').classList.toggle('cloud-paused', mode === 'cloud' && !signedIn);
     $('#cloud-mode-title').textContent = mode === 'cloud' ? 'Cloud-synced workspace' : 'Local workspace';
     $('#cloud-mode-description').textContent = mode === 'cloud' ? 'Your journal can sync across devices after Google sign-in.' : 'Journal data is stored only in this browser.';
     $('#cloud-status-dot').classList.toggle('online', signedIn && mode === 'cloud');
     $('#cloud-status-text').textContent = statusOverride || (mode === 'cloud' ? signedIn ? 'Connected to secure cloud sync' : cloudReady ? 'Sign in to resume cloud sync' : 'Owner cloud setup is incomplete' : 'Local-only mode');
     $('#cloud-sign-in').hidden = signedIn;
-    $('#cloud-sign-in').disabled = !cloudReady;
-    $('#cloud-sign-in').textContent = mode === 'cloud' ? 'Sign in with Google' : 'Enable cloud with Google';
-    ['#cloud-sync-now', '#cloud-download', '#cloud-sign-out', '#support-access-row', '#cloud-delete-account'].forEach(selector => { $(selector).hidden = !signedIn; });
+    $('#cloud-sign-in').disabled = PUBLIC_CLOUD_SIGNIN_LOCKED || !cloudReady;
+    $('#cloud-sign-in').textContent = PUBLIC_CLOUD_SIGNIN_LOCKED ? '🔒 Google Drive backup — Beta #2' : mode === 'cloud' ? 'Sign in with Google' : 'Enable cloud with Google';
+    ['#cloud-sync-now', '#cloud-download', '#cloud-sign-out', '#support-access-row'].forEach(selector => { $(selector).hidden = !signedIn; });
+    $('#cloud-delete-account').hidden = false;
+    $('#cloud-delete-account').textContent = 'Delete cloud account & data';
     $('#admin-dashboard-link').hidden = !isAdmin();
     $('#cloud-identity').hidden = !signedIn;
     if (signedIn) {
@@ -310,6 +321,22 @@
       $('#cloud-user-name').textContent = name;
       $('#cloud-user-email').textContent = session.user.email || '';
       $('#cloud-avatar').textContent = String(name).charAt(0).toUpperCase();
+    }
+    if (mode === 'cloud' && signedIn) {
+      $('#workspace-mode-label').textContent = 'Cloud backup connected';
+      $('#workspace-storage-title').textContent = 'Backed up to your private cloud workspace';
+      $('#workspace-storage-copy').textContent = statusOverride || 'Your journal syncs to your authenticated Supabase workspace and can be accessed on another device after Google sign-in.';
+      $('#sidebar-storage-label').textContent = 'Cloud + cross-device access';
+    } else if (mode === 'cloud') {
+      $('#workspace-mode-label').textContent = 'Cloud sync paused';
+      $('#workspace-storage-title').textContent = 'Sign in to resume cloud backup';
+      $('#workspace-storage-copy').textContent = 'This device copy remains available. Google sign-in is required before online backup or cross-device access can continue.';
+      $('#sidebar-storage-label').textContent = 'Cloud mode · sign-in required';
+    } else if (mode === 'local') {
+      $('#workspace-mode-label').textContent = 'Local-only workspace';
+      $('#workspace-storage-title').textContent = 'Saved privately on this device';
+      $('#workspace-storage-copy').textContent = 'Trades, screenshots, setups, and settings stay in this browser. Export a backup before clearing browser data or moving devices.';
+      $('#sidebar-storage-label').textContent = 'Local-only access';
     }
   }
 
@@ -336,6 +363,7 @@
     const mode = String(form.get('storageMode'));
     const errorBox = $('#onboarding-error');
     errorBox.textContent = '';
+    if (mode === 'cloud' && PUBLIC_CLOUD_SIGNIN_LOCKED) { errorBox.textContent = 'Google sign-in and cloud access are a locked preview for now. Choose local storage to continue.'; return; }
     if (mode === 'cloud' && !cloudReady) { errorBox.textContent = 'Cloud mode needs the database schema and Google provider enabled by the owner.'; return; }
     if (!bridge.hasDevicePassword()) {
       const password = String(form.get('password') || '');
@@ -358,6 +386,7 @@
   });
 
   $('#cloud-sign-in').addEventListener('click', async () => {
+    if (PUBLIC_CLOUD_SIGNIN_LOCKED) { bridge.toast('Google Drive backup is prepared for Beta #2 but is not available yet.'); return; }
     if (!cloudReady) { bridge.toast('Cloud setup is not finished yet'); return; }
     if (storageMode() !== 'cloud') {
       const confirmed = window.confirm('Enable cloud sync? Your journal workspace will be stored in your private Supabase account and synchronized after Google sign-in.');
@@ -389,7 +418,14 @@
     else bridge.toast(event.target.checked ? 'Temporary support access enabled' : 'Temporary support access disabled');
   });
   $('#cloud-delete-account').addEventListener('click', async () => {
-    if (!session?.user || !window.confirm('Permanently delete your eLOG cloud account and cloud workspace? Your current device copy will remain local. This cannot be undone.')) return;
+    if (!session?.user) {
+      if (!window.confirm('To delete an existing cloud account, eLOG must first verify that account with Google. This privacy-only sign-in will not enable cloud storage. Continue?')) return;
+      localStorage.setItem(DELETE_PENDING_KEY, 'true');
+      const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: config.appUrl } });
+      if (error) { localStorage.removeItem(DELETE_PENDING_KEY); bridge.toast(`Identity verification failed: ${safeError(error)}`); }
+      return;
+    }
+    if (!window.confirm('Permanently delete your eLOG cloud account and all cloud workspace data? Your current device copy will remain local. This cannot be undone.')) return;
     const { error } = await client.rpc('elog_delete_my_account');
     if (error) { bridge.toast(`Account deletion failed: ${safeError(error)}`); return; }
     await client.auth.signOut();
@@ -420,6 +456,11 @@
       client.auth.onAuthStateChange((event, nextSession) => {
         session = nextSession;
         renderCloudPanel();
+        if (event === 'SIGNED_IN' && localStorage.getItem(DELETE_PENDING_KEY)) {
+          localStorage.removeItem(DELETE_PENDING_KEY);
+          bridge.toast('Identity verified. Select Delete cloud account & data again to confirm deletion.');
+          return;
+        }
         if (event === 'SIGNED_IN' && storageMode() === 'cloud') {
           loadProfileControls();
           if (localStorage.getItem(PENDING_KEY)) finishCloudOnboarding();
@@ -427,7 +468,10 @@
         }
       });
     }
-    if (storageMode() === 'unset' || (localStorage.getItem(PENDING_KEY) && !session)) showOnboarding();
+    if (session && localStorage.getItem(DELETE_PENDING_KEY)) {
+      localStorage.removeItem(DELETE_PENDING_KEY);
+      bridge.toast('Identity verified. Open Settings and select Delete cloud account & data again.');
+    } else if (storageMode() === 'unset' || (localStorage.getItem(PENDING_KEY) && !session)) showOnboarding();
     else if (storageMode() === 'cloud' && session) {
       await loadProfileControls();
       if (localStorage.getItem(PENDING_KEY)) await finishCloudOnboarding();
