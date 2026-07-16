@@ -23,6 +23,7 @@
   let syncing = false;
   let conflict = null;
   let lastActivity = Date.now();
+  let googleNonce = '';
 
   function storageMode() { return localStorage.getItem(MODE_KEY) || 'unset'; }
   function getOrCreateId(key) {
@@ -114,6 +115,52 @@
     const redirectTo = config.appUrl;
     const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
     if (error) throw error;
+  }
+
+  function bytesToBase64(bytes) {
+    let binary = '';
+    bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+    return btoa(binary);
+  }
+
+  async function generateGoogleNonce() {
+    const nonce = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)));
+    const digestBytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(nonce)));
+    const hashedNonce = [...digestBytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    return [nonce, hashedNonce];
+  }
+
+  async function waitForGoogleIdentity(timeout = 3500) {
+    const started = Date.now();
+    while (!window.google?.accounts?.id && Date.now() - started < timeout) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return window.google?.accounts?.id || null;
+  }
+
+  async function showGoogleQuickSignIn() {
+    if (!client || !cloudReady || session?.user || storageMode() !== 'cloud' || !config.googleClientId) return false;
+    const identity = await waitForGoogleIdentity();
+    if (!identity) return false;
+    const [nonce, hashedNonce] = await generateGoogleNonce();
+    googleNonce = nonce;
+    identity.initialize({
+      client_id: config.googleClientId,
+      nonce: hashedNonce,
+      use_fedcm_for_prompt: true,
+      auto_select: true,
+      cancel_on_tap_outside: true,
+      callback: async response => {
+        if (!response?.credential || !googleNonce) return;
+        const { data, error } = await client.auth.signInWithIdToken({ provider: 'google', token: response.credential, nonce: googleNonce });
+        googleNonce = '';
+        if (error) { bridge.toast(`Google quick sign-in failed: ${safeError(error)}`); return; }
+        session = data.session;
+        renderCloudPanel('Google quick sign-in complete');
+      }
+    });
+    identity.prompt();
+    return true;
   }
 
   async function upsertProfile() {
@@ -328,12 +375,13 @@
     if (!confirmed) return;
     localStorage.setItem(MODE_KEY, 'local');
     [LAST_HASH_KEY, LAST_SERVER_KEY, LAST_REVISION_KEY, PENDING_KEY].forEach(key => localStorage.removeItem(key));
+    window.google?.accounts?.id?.disableAutoSelect();
     if (client && session) await client.auth.signOut();
     session = null;
     renderCloudPanel();
     bridge.toast('This device now uses local-only storage.');
   });
-  $('#cloud-sign-out').addEventListener('click', async () => { await client.auth.signOut(); session = null; renderCloudPanel(); bridge.toast('Signed out. Local data remains on this device.'); });
+  $('#cloud-sign-out').addEventListener('click', async () => { window.google?.accounts?.id?.disableAutoSelect(); await client.auth.signOut(); session = null; renderCloudPanel(); bridge.toast('Signed out. Local data remains on this device.'); });
   $('#support-access').addEventListener('change', async event => {
     if (!session?.user) return;
     const { error } = await client.from('elog_profiles').update({ support_access: event.target.checked }).eq('user_id', session.user.id);
@@ -386,6 +434,7 @@
       else await syncNow();
     }
     renderCloudPanel();
+    if (storageMode() === 'cloud' && !session) showGoogleQuickSignIn();
     await trackEvent('app_opened');
     setInterval(() => syncNow(), SYNC_INTERVAL);
   }

@@ -39,6 +39,8 @@ if (!schema.includes('alter table public.elog_workspaces enable row level securi
 const combinedClientCode = `${html}\n${app}\n${cloud}\n${admin}\n${config}`;
 if (/sb_secret_|service_role\s*[:=]/i.test(combinedClientCode)) failures.push('a secret or service-role credential appears in public client files');
 if (!config.includes('sb_publishable_')) failures.push('cloud config must use a publishable Supabase key');
+if (!config.includes('googleClientId') || !html.includes('accounts.google.com/gsi/client')) failures.push('Google quick sign-in configuration is missing');
+if (!cloud.includes('signInWithIdToken') || !cloud.includes('use_fedcm_for_prompt: true')) failures.push('Google quick sign-in must use Supabase ID-token auth and FedCM');
 
 const idList = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
 const ids = new Set(idList);
