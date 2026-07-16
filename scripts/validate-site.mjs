@@ -4,7 +4,7 @@ const requiredFiles = [
   'index.html', 'app.js', 'styles.css', 'trade-form.css', 'motion.css', 'beta.css',
   'cloud.css', 'cloud-config.js', 'cloud.js', 'drive-storage.js', 'admin.html', 'admin.css', 'admin.js',
   'manifest.webmanifest', 'sw.js', 'icons/elog-icon.svg', 'icons/elog-192.png', 'icons/elog-512.png',
-  'supabase/schema.sql', 'supabase/make-owner-admin.sql', 'supabase/README.md'
+  'supabase/schema.sql', 'supabase/make-owner-admin.sql', 'supabase/fix-account-deletion.sql', 'supabase/README.md'
 ];
 
 await Promise.all(requiredFiles.map(file => access(file)));

@@ -201,6 +201,11 @@ begin
   if current_user_id is null then
     raise exception 'Authentication required';
   end if;
+  -- Signed-in product events have no anonymous_id. Deleting auth.users first
+  -- would set user_id to null and violate the event ownership check.
+  delete from public.elog_product_events where user_id = current_user_id;
+  delete from public.elog_workspaces where user_id = current_user_id;
+  delete from public.elog_profiles where user_id = current_user_id;
   delete from auth.users where id = current_user_id;
 end;
 $$;
