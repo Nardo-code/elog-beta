@@ -1,0 +1,22 @@
+name: eLOG quality checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out eLOG
+        uses: actions/checkout@v6
+      - name: Validate static app
+        run: node scripts/validate-site.mjs
+      - name: Check JavaScript syntax
+        run: node --check app.js && node --check sw.js

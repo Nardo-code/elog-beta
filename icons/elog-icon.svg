@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="eLOG E logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b9ff66"/>
+      <stop offset="1" stop-color="#54d787"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#001a0d" flood-opacity=".3"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="#07100b"/>
+  <path filter="url(#shadow)" fill="url(#bg)" d="M110 115c0-31 25-56 56-56h181c31 0 56 25 56 56v282c0 31-25 56-56 56H166c-31 0-56-25-56-56V115Z"/>
+  <path fill="#0a1510" d="M178 149h166v58H239v48h92v55h-92v55h109v58H178V149Z"/>
+</svg>
