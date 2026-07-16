@@ -1,34 +1,21 @@
-# eLOG Beta 0.3.0
+# eLOG Beta
 
-eLOG is an installable trading journal beta for stocks, options, futures, and forex. Testers can choose local-only storage or, after owner setup, private cloud synchronization with Google sign-in.
+eLOG is an installable trading journal beta for stocks, options, futures, and forex.
 
-## Beta notice
+## Tester safety
 
-- Local mode stores journal data in the tester's browser on their device.
-- Cloud mode stores the workspace in the signed-in user's private Supabase row and supports cross-device synchronization.
-- Testers should download data copies and create restore points regularly.
-- The local password protects the interface but does not encrypt browser storage.
-- Optional analytics and diagnostics are off by default and exclude trades, symbols, screenshots, notes, balances, and setup criteria.
-- The owner dashboard receives account, consent, event-count, and sync status only; it cannot retrieve raw journal payloads.
-- Rule coaching uses correlations in the tester's own journal; it is not a trade signal.
-- GitHub feedback is public and must not contain private trading or personal information.
-- Paid plans are previews and do not process payments in MK1.
-- eLOG is a journaling tool, not financial advice.
+- Beta access is free; payments and subscriptions are not active.
+- New Google sign-in and cloud enrollment are locked previews for now.
+- Journal data is saved to the tester's current browser/device unless the tester previously enabled cloud storage.
+- Downloaded backups are strongly recommended before clearing browser data or changing devices.
+- Optional usage sharing is off by default and must never include trades, symbols, screenshots, notes, balances, or setup criteria.
+- Feedback submitted through GitHub is public; testers must not include private trading or personal information.
+- eLOG provides journaling and performance review, not financial advice or trade signals.
 
-## Public beta
+## Beta testing
 
-Open https://nardo-code.github.io/elog-beta/ in a current browser. Use **Settings → Install eLOG** to add it to Windows, Android, or another supported desktop/mobile browser. On iPhone or iPad, use Safari's **Share → Add to Home Screen**.
+Open the published eLOG site in a current browser and follow the in-app Quick Tutorial. Report reproducible bugs without including private journal content.
 
-## Activate Stage 2 cloud mode
+## Security
 
-1. Run `supabase/schema.sql` in the Supabase SQL Editor.
-2. Set the Supabase Site URL and redirect URL to `https://nardo-code.github.io/elog-beta/`.
-3. Enable Google in Supabase Authentication using your Google OAuth client ID and secret.
-4. Sign in once, replace the placeholder email in `supabase/make-owner-admin.sql`, and run it in the SQL Editor.
-5. Sign out and back in to refresh the owner role, then open `admin.html` from Settings.
-
-The website contains only the Supabase publishable key. Never commit a Supabase secret or service-role key.
-
-## Development checks
-
-Run `node scripts/validate-site.mjs`, then syntax-check `app.js`, `cloud.js`, `admin.js`, and `sw.js` before publishing.
+This public repository must never contain passwords, OAuth client secrets, Supabase secret/service-role keys, database credentials, private journal exports, or personal authentication information.
