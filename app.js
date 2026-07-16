@@ -36,9 +36,10 @@ const defaultRules = [
   { id: 'rule-mind-1', category: 'Psychology', market: 'All markets', name: 'Stop after daily loss limit', description: 'Do not open another position after reaching the defined daily loss limit.', severity: 'Hard rule', reason: 'Prevent revenge trading', active: true }
 ];
 const CONSENT_VERSION = '2.0';
-const APP_VERSION = 'Beta 0.3.1';
+const APP_VERSION = 'Beta 0.3.2';
 const GITHUB_REPOSITORY = 'https://github.com/Nardo-code/elog-beta';
-const defaultProfile = { name: 'Trader', currency: 'USD', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', avatar: '' };
+const DEVICE_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+const defaultProfile = { name: 'Trader', currency: 'USD', timezone: DEVICE_TIMEZONE, avatar: '' };
 const defaultAccounts = [{ id: 'account-primary', name: 'Main trading', broker: '', startingBalance: 25000, currency: 'USD' }];
 
 const $ = selector => document.querySelector(selector);
@@ -48,6 +49,9 @@ const readStore = (key, fallback) => {
   catch { return fallback; }
 };
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+const validTimezone = value => { try { new Intl.DateTimeFormat('en-US', { timeZone: value }).format(); return true; } catch { return false; } };
+const activeTimezone = () => validTimezone(userProfile?.timezone) ? userProfile.timezone : DEVICE_TIMEZONE;
+const zonedParts = (date, timezone = activeTimezone()) => Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: timezone, hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(date).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
 const money = value => `${Number(value) >= 0 ? '+' : '-'}${new Intl.NumberFormat(undefined, { style: 'currency', currency: userProfile?.currency || 'USD' }).format(Math.abs(Number(value || 0)))}`;
 
 let trades = readStore('edgelog-trades', starterTrades).map((trade, index) => ({ id: trade.id || `legacy-${index}`, ...trade }));
@@ -409,18 +413,59 @@ function renderAccountSettings() {
   $('#trade-account').innerHTML = options;
   $('#cash-adjustment-form').elements.accountId.innerHTML = options;
   const form = $('#profile-form');
+  ensureTimezoneControls();
   form.elements.name.value = userProfile.name || '';
   form.elements.currency.value = userProfile.currency || 'USD';
-  form.elements.timezone.value = userProfile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  form.elements.timezone.value = activeTimezone();
   const profileName = $('.profile strong');
   profileName.textContent = userProfile.name || 'Trader';
-  const hour = new Date().getHours();
+  const hour = Number(zonedParts(new Date()).hour);
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   $('#dashboard .page-heading h1').textContent = `${greeting}, ${userProfile.name || 'Trader'}.`;
   const initials = (userProfile.name || 'Trader').split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
   const avatar = $('.avatar');
   avatar.textContent = userProfile.avatar ? '' : initials;
   avatar.style.backgroundImage = userProfile.avatar ? `url(${userProfile.avatar})` : '';
+  updateTimezoneClock();
+}
+
+function ensureTimezoneControls() {
+  const input = $('#profile-form').elements.timezone;
+  if ($('#timezone-options')) return;
+  input.setAttribute('list', 'timezone-options');
+  input.placeholder = DEVICE_TIMEZONE;
+  input.autocomplete = 'off';
+  const list = document.createElement('datalist');
+  list.id = 'timezone-options';
+  const zones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : ['UTC', 'America/New_York', 'America/Chicago', 'Europe/London', 'Asia/Tokyo'];
+  const fragment = document.createDocumentFragment();
+  [...new Set([DEVICE_TIMEZONE, 'UTC', ...zones])].forEach(zone => { const option = document.createElement('option'); option.value = zone; fragment.append(option); });
+  list.append(fragment);
+  input.after(list);
+  const helper = document.createElement('span');
+  helper.className = 'timezone-helper';
+  helper.innerHTML = `<span>Device timezone: <strong>${esc(DEVICE_TIMEZONE)}</strong></span><button type="button" id="use-device-timezone">Use device timezone</button>`;
+  list.after(helper);
+  helper.querySelector('button').addEventListener('click', () => { input.value = DEVICE_TIMEZONE; input.focus(); updateTimezoneClock(DEVICE_TIMEZONE); });
+}
+
+function updateTimezoneClock(timezoneOverride = '') {
+  const clock = $('#timezone-clock');
+  if (!clock) return;
+  const timezone = validTimezone(timezoneOverride) ? timezoneOverride : activeTimezone();
+  const now = new Date();
+  const parts = zonedParts(now, timezone);
+  const hour = Number(parts.hour) % 12;
+  const minute = Number(parts.minute);
+  const second = Number(parts.second);
+  $('.clock-hour').style.transform = `translateX(-50%) rotate(${(hour + minute / 60) * 30}deg)`;
+  $('.clock-minute').style.transform = `translateX(-50%) rotate(${(minute + second / 60) * 6}deg)`;
+  $('.clock-second').style.transform = `translateX(-50%) rotate(${second * 6}deg)`;
+  $('#clock-time').textContent = new Intl.DateTimeFormat([], { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(now);
+  const zoneName = new Intl.DateTimeFormat('en-US', { timeZone: timezone, timeZoneName: 'short' }).formatToParts(now).find(part => part.type === 'timeZoneName')?.value || timezone;
+  $('#clock-zone').textContent = zoneName;
+  clock.title = `Current time in ${timezone}`;
+  clock.setAttribute('aria-label', `${$('#clock-time').textContent}, ${timezone}`);
 }
 
 function renderCashActivity() {
@@ -454,7 +499,9 @@ $('#profile-form').addEventListener('submit', async event => {
   event.preventDefault();
   const form = new FormData(event.target);
   const avatarFile = event.target.elements.avatar.files[0];
-  userProfile = { ...userProfile, name: form.get('name').trim(), currency: form.get('currency'), timezone: form.get('timezone').trim(), avatar: avatarFile ? await compressImage(avatarFile) : userProfile.avatar };
+  const timezone = form.get('timezone').trim();
+  if (!validTimezone(timezone)) { toast('Choose a valid timezone, such as America/New_York'); event.target.elements.timezone.focus(); return; }
+  userProfile = { ...userProfile, name: form.get('name').trim(), currency: form.get('currency'), timezone, avatar: avatarFile ? await compressImage(avatarFile) : userProfile.avatar };
   localStorage.setItem('edgelog-profile', JSON.stringify(userProfile));
   renderAccountSettings();
   renderOverview();
@@ -1489,6 +1536,39 @@ function closeGuide() {
   closeModal($('#guide-modal'));
 }
 
+function configureGuideWorkspaceChoice() {
+  if ($('#guide-workspace-choice')) return;
+  const choice = document.createElement('div');
+  choice.className = 'guide-workspace-choice';
+  choice.id = 'guide-workspace-choice';
+  choice.innerHTML = '<div><strong>Choose your starting workspace</strong><p>You can begin clean or load examples that show how eLOG analytics should look.</p></div><button class="secondary-button" id="start-blank-workspace" type="button">Start blank</button><button class="primary-button" id="start-demo-workspace" type="button">Use demo workspace</button>';
+  $('#close-guide').textContent = 'Keep current workspace';
+  $('#close-guide').before(choice);
+  $('#start-blank-workspace').addEventListener('click', () => {
+    const hasPersonalTrades = trades.some(trade => !String(trade.id).startsWith('sample-'));
+    if (hasPersonalTrades && !window.confirm('Start with a blank journal? This removes the currently posted trades. Download a backup first if you need them.')) return;
+    trades = [];
+    selectedTradeIds.clear();
+    localStorage.setItem('edgelog-trades', '[]');
+    localStorage.setItem('edgelog-start-mode', 'blank');
+    render();
+    closeGuide();
+    toast('Blank workspace ready');
+  });
+  $('#start-demo-workspace').addEventListener('click', () => {
+    const hasPersonalTrades = trades.some(trade => !String(trade.id).startsWith('sample-'));
+    if (hasPersonalTrades && !window.confirm('Replace the current journal with six demo trades? Download a backup first if you need the current trades.')) return;
+    trades = starterTrades.map(trade => ({ ...trade }));
+    selectedTradeIds.clear();
+    localStorage.setItem('edgelog-trades', JSON.stringify(trades));
+    localStorage.setItem('edgelog-start-mode', 'demo');
+    render();
+    closeGuide();
+    toast('Demo workspace loaded');
+  });
+}
+
+configureGuideWorkspaceChoice();
 $('#help-button').addEventListener('click', openGuide);
 $('#view-tour').addEventListener('click', openGuide);
 $('#close-guide').addEventListener('click', closeGuide);
@@ -1646,6 +1726,7 @@ renderDeviceBackups();
 applySidebarState();
 applyMotionSetting();
 updateCustomRangeVisibility();
+setInterval(updateTimezoneClock, 1000);
 selectMarket('Stocks');
 render();
 const onboardingComplete = Boolean(localStorage.getItem('edgelog-storage-mode'));

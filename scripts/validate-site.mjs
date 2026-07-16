@@ -2,7 +2,7 @@ import { readFile, access } from 'node:fs/promises';
 
 const requiredFiles = [
   'index.html', 'app.js', 'styles.css', 'trade-form.css', 'motion.css', 'beta.css',
-  'cloud.css', 'cloud-config.js', 'cloud.js', 'drive-storage.js', 'admin.html', 'admin.css', 'admin.js',
+  'cloud.css', 'clock.css', 'cloud-config.js', 'cloud.js', 'drive-storage.js', 'admin.html', 'admin.css', 'admin.js',
   'manifest.webmanifest', 'sw.js', 'icons/elog-icon.svg', 'icons/elog-192.png', 'icons/elog-512.png',
   'supabase/schema.sql', 'supabase/make-owner-admin.sql', 'supabase/fix-account-deletion.sql', 'supabase/README.md'
 ];
@@ -44,10 +44,11 @@ if (!cloud.includes('signInWithIdToken') || !cloud.includes('use_fedcm_for_promp
 
 const idList = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
 const ids = new Set(idList);
+const dynamicAppIds = new Set(['timezone-options', 'guide-workspace-choice', 'start-blank-workspace', 'start-demo-workspace']);
 const duplicateIds = [...ids].filter(id => idList.filter(value => value === id).length > 1);
 if (duplicateIds.length) failures.push(`duplicate HTML ids: ${duplicateIds.join(', ')}`);
 for (const match of app.matchAll(/\$\('#([A-Za-z][\w:-]*)'\)/g)) {
-  if (!ids.has(match[1])) failures.push(`app.js references missing element #${match[1]}`);
+  if (!ids.has(match[1]) && !dynamicAppIds.has(match[1])) failures.push(`app.js references missing element #${match[1]}`);
 }
 for (const match of cloud.matchAll(/\$\('#([A-Za-z][\w:-]*)'\)/g)) {
   if (!ids.has(match[1])) failures.push(`cloud.js references missing element #${match[1]}`);

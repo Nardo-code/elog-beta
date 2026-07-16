@@ -1,4 +1,4 @@
-const CACHE_NAME = 'elog-beta-0.3.1';
+const CACHE_NAME = 'elog-beta-0.3.2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const APP_SHELL = [
   './motion.css',
   './beta.css',
   './cloud.css',
+  './clock.css',
   './cloud-config.js',
   './drive-storage.js',
   './app.js',
