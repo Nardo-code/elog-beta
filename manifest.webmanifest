@@ -2,7 +2,7 @@
   "id": "./",
   "name": "eLOG Trading Journal",
   "short_name": "eLOG",
-  "description": "A local-first trading journal for stocks, options, futures, and forex.",
+  "description": "A privacy-conscious local or cloud trading journal for stocks, options, futures, and forex.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

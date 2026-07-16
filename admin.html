@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#15231d">
+  <title>eLOG Owner Dashboard</title>
+  <link rel="icon" href="icons/elog-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <header class="admin-header"><a class="admin-brand" href="index.html"><span>E</span><strong>eLOG</strong></a><div><a href="index.html">Open journal</a><button id="admin-sign-out" type="button" hidden>Sign out</button></div></header>
+  <main>
+    <section class="hero"><div><p class="eyebrow">OWNER DASHBOARD</p><h1>Product health without exposing journals.</h1><p>Only account status, consent choices, synchronization health, and allowlisted product events appear here. Raw trades, symbols, notes, screenshots, balances, and setup criteria are never returned.</p></div><div class="privacy-shield"><span>✓</span><div><strong>Privacy boundary active</strong><small>Journal payload access is excluded by the admin database functions.</small></div></div></section>
+    <section class="gate" id="admin-gate"><div class="gate-mark">E</div><p class="eyebrow">RESTRICTED ACCESS</p><h2 id="admin-gate-title">Checking owner access…</h2><p id="admin-gate-copy">This page requires an authenticated eLOG account with the admin role.</p><button id="admin-sign-in" type="button" hidden>Sign in with Google</button><a id="admin-back" href="index.html" hidden>Return to eLOG</a></section>
+    <div id="admin-content" hidden>
+      <section class="summary-grid" id="summary-grid"></section>
+      <section class="admin-grid">
+        <article class="card"><div class="card-heading"><div><p class="eyebrow">ACCOUNT &amp; SYNC STATUS</p><h2>Cloud beta users</h2></div><button id="refresh-admin" type="button">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>User</th><th>Storage</th><th>Consent</th><th>Support</th><th>Last seen</th><th>Workspace</th></tr></thead><tbody id="admin-users"></tbody></table></div><p class="empty" id="admin-users-empty" hidden>No cloud users yet.</p></article>
+        <article class="card"><p class="eyebrow">ALLOWLISTED EVENTS</p><h2>Last 30 days</h2><div class="event-list" id="admin-events"></div><p class="empty" id="admin-events-empty" hidden>No consented product events yet.</p></article>
+      </section>
+      <section class="owner-actions"><div><p class="eyebrow">BETA OPERATIONS</p><h2>Keep user reports separate from private data.</h2><p>Use GitHub Issues for tester feedback and GitHub Actions for release health. Never request journal exports in a public issue.</p></div><div><a href="https://github.com/Nardo-code/elog-beta/issues" target="_blank" rel="noreferrer">Feedback issues</a><a href="https://github.com/Nardo-code/elog-beta/actions" target="_blank" rel="noreferrer">Release checks</a></div></section>
+    </div>
+  </main>
+  <div id="admin-toast" role="status" aria-live="polite"></div>
+  <script src="cloud-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.6/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
+  <script src="admin.js"></script>
+</body>
+</html>
