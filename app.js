@@ -36,7 +36,8 @@ const defaultRules = [
   { id: 'rule-mind-1', category: 'Psychology', market: 'All markets', name: 'Stop after daily loss limit', description: 'Do not open another position after reaching the defined daily loss limit.', severity: 'Hard rule', reason: 'Prevent revenge trading', active: true }
 ];
 const CONSENT_VERSION = '1.0';
-const APP_VERSION = 'Prototype MK1';
+const APP_VERSION = 'Beta 0.2.0';
+const GITHUB_REPOSITORY = 'https://github.com/Nardo-code/elog-beta';
 const defaultProfile = { name: 'Dimechio', currency: 'USD', timezone: 'America/Bogota', avatar: '' };
 const defaultAccounts = [{ id: 'account-primary', name: 'Main trading', broker: '', startingBalance: 25000, currency: 'USD' }];
 
@@ -181,7 +182,86 @@ function renderRules() {
   const visibleRules = tradingRules.filter(rule => currentRuleFilter === 'All' || rule.category === currentRuleFilter);
   $('#rules-grid').innerHTML = visibleRules.length ? visibleRules.map(rule => `<article class="rule-card ${rule.active ? '' : 'inactive'}" data-rule-id="${esc(rule.id)}"><div class="rule-card-top"><span class="rule-category ${rule.category.toLowerCase()}">${esc(rule.category)}</span><span class="rule-severity">${esc(rule.severity)}</span></div><h2>${esc(rule.name)}</h2><p>${esc(rule.description)}</p><div class="rule-meta"><span><small>Applies to</small><strong>${esc(rule.market)}</strong></span><span><small>Purpose</small><strong>${esc(rule.reason || 'Consistency')}</strong></span></div><div class="rule-card-actions"><button class="rule-toggle" data-action="toggle">${rule.active ? 'Active' : 'Paused'}</button><button class="rule-delete" data-action="delete">Delete</button></div></article>`).join('') : '<div class="empty-analytics">No rules in this category yet.</div>';
   $('#rules-grid').querySelectorAll('.rule-delete').forEach(button => { button.textContent = 'Remove rule'; });
+  renderRuleCoaching();
   renderTradeRuleChecklist();
+}
+
+function averageResult(list) {
+  return list.length ? list.reduce((sum, trade) => sum + Number(trade.result || 0), 0) / list.length : null;
+}
+
+function renderRuleCoaching() {
+  const records = trades.map(trade => {
+    const checks = Array.isArray(trade.ruleResults) ? trade.ruleResults : [];
+    const followed = checks.filter(result => result.followed).length;
+    return checks.length ? { trade, checks, followed, adherence: followed / checks.length * 100 } : null;
+  }).filter(Boolean);
+
+  $('#tracked-rule-trades').textContent = records.length;
+  const ordered = [...records].sort((a, b) => parsedTradeDate(a.trade).getTime() - parsedTradeDate(b.trade).getTime());
+  let perfectStreak = 0;
+  ordered.forEach(record => { perfectStreak = record.adherence === 100 ? perfectStreak + 1 : 0; });
+  $('#perfect-rule-streak').textContent = perfectStreak;
+
+  const outcomeRecords = records.filter(record => record.trade.status !== 'Open');
+  const highDiscipline = outcomeRecords.filter(record => record.adherence >= 80).map(record => record.trade);
+  const lowerDiscipline = outcomeRecords.filter(record => record.adherence < 80).map(record => record.trade);
+  const highAverage = averageResult(highDiscipline);
+  const lowerAverage = averageResult(lowerDiscipline);
+  $('#high-discipline-average').textContent = highAverage === null ? '—' : money(highAverage);
+
+  const ruleStats = tradingRules.map(rule => {
+    const followedTrades = [];
+    const brokenTrades = [];
+    outcomeRecords.forEach(({ trade, checks }) => {
+      const result = checks.find(check => check.ruleId === rule.id);
+      if (!result) return;
+      (result.followed ? followedTrades : brokenTrades).push(trade);
+    });
+    const followedAverage = averageResult(followedTrades);
+    const brokenAverage = averageResult(brokenTrades);
+    return {
+      rule,
+      followedTrades,
+      brokenTrades,
+      followedAverage,
+      brokenAverage,
+      impact: followedAverage !== null && brokenAverage !== null ? followedAverage - brokenAverage : null
+    };
+  }).filter(stat => stat.followedTrades.length || stat.brokenTrades.length);
+
+  const calls = [];
+  if (records.length < 3) {
+    calls.push({ tone: 'neutral', title: 'Build a reliable sample', body: `Track rules on ${3 - records.length} more trade${3 - records.length === 1 ? '' : 's'} before treating patterns as meaningful.` });
+  }
+
+  const mostBroken = [...ruleStats].sort((a, b) => b.brokenTrades.length - a.brokenTrades.length)[0];
+  if (mostBroken?.brokenTrades.length) {
+    calls.push({ tone: 'warning', title: 'Pre-trade focus', body: `“${mostBroken.rule.name}” is your most-missed rule (${mostBroken.brokenTrades.length} time${mostBroken.brokenTrades.length === 1 ? '' : 's'}). Put it at the top of your next checklist.` });
+  }
+
+  if (records.length >= 5 && highDiscipline.length >= 2 && lowerDiscipline.length >= 2) {
+    const difference = highAverage - lowerAverage;
+    calls.push({
+      tone: difference >= 0 ? 'positive' : 'neutral',
+      title: 'Discipline outcome check',
+      body: `Trades with 80%+ adherence average ${money(highAverage)} versus ${money(lowerAverage)} below 80% (${money(difference)} difference).`
+    });
+  }
+
+  const strongestRule = ruleStats.filter(stat => stat.followedTrades.length >= 2 && stat.brokenTrades.length >= 2 && stat.impact !== null).sort((a, b) => b.impact - a.impact)[0];
+  if (strongestRule) {
+    calls.push({
+      tone: strongestRule.impact >= 0 ? 'positive' : 'neutral',
+      title: 'Strongest recorded rule link',
+      body: `Following “${strongestRule.rule.name}” has a ${money(strongestRule.impact)} average-result difference in your journal so far.`
+    });
+  }
+
+  if (!calls.length) calls.push({ tone: 'neutral', title: 'No coaching call yet', body: 'Log a trade with its rule checklist to begin measuring discipline.' });
+  $('#discipline-calls').innerHTML = calls.slice(0, 3).map(call => `<article class="discipline-call ${call.tone}"><span>${call.tone === 'positive' ? '↗' : call.tone === 'warning' ? '!' : '◎'}</span><div><strong>${esc(call.title)}</strong><p>${esc(call.body)}</p></div></article>`).join('');
+
+  $('#rule-impact-table').innerHTML = ruleStats.length ? `<div class="rule-impact-head"><span>Rule</span><span>Followed</span><span>Broken</span><span>Avg. link</span></div>${ruleStats.map(stat => `<div class="rule-impact-row"><strong title="${esc(stat.rule.name)}">${esc(stat.rule.name)}</strong><span>${stat.followedTrades.length}</span><span>${stat.brokenTrades.length}</span><span class="${stat.impact === null ? '' : stat.impact >= 0 ? 'result-positive' : 'result-negative'}">${stat.impact === null ? 'More data' : money(stat.impact)}</span></div>`).join('')}` : '<div class="empty-analytics">Per-rule impact appears after checklist-tracked trades.</div>';
 }
 
 function parsedTradeDate(trade, fallbackIndex = 0) {
@@ -1311,62 +1391,21 @@ $('#delete-data').addEventListener('click', () => {
 
 const feedbackForm = $('#feedback-form');
 const feedbackMessage = feedbackForm.elements.message;
-const feedbackIsOnline = location.protocol === 'https:' || location.protocol === 'http:';
-if (feedbackIsOnline) {
-  $('#feedback-delivery-dot').classList.add('online');
-  $('#feedback-delivery-text').textContent = 'Online beta: feedback will be sent securely to the eLOG feedback endpoint.';
-}
-
-function queueFeedback(payload) {
-  const outbox = readStore('edgelog-feedback-outbox', []);
-  outbox.push(payload);
-  localStorage.setItem('edgelog-feedback-outbox', JSON.stringify(outbox));
-}
-
-async function deliverFeedback(payload) {
-  if (!feedbackIsOnline) {
-    queueFeedback(payload);
-    return 'queued';
-  }
-  try {
-    const response = await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (!response.ok) throw new Error('Feedback endpoint unavailable');
-    return 'sent';
-  } catch {
-    queueFeedback(payload);
-    return 'queued';
-  }
-}
 
 $('#feedback-button').addEventListener('click', () => openModal('#feedback-modal'));
 feedbackMessage.addEventListener('input', () => { $('#feedback-count').textContent = feedbackMessage.value.length; });
-feedbackForm.addEventListener('submit', async event => {
+feedbackForm.addEventListener('submit', event => {
   event.preventDefault();
   const form = new FormData(feedbackForm);
-  const submit = feedbackForm.querySelector('[type="submit"]');
-  const payload = {
-    id: `feedback-${Date.now()}`,
-    createdAt: new Date().toISOString(),
-    category: form.get('category'),
-    rating: Number(form.get('rating')),
-    message: form.get('message').trim(),
-    replyEmail: form.get('email').trim() || null,
-    diagnostics: form.get('shareDiagnostics') ? {
-      appVersion: APP_VERSION,
-      currentView: $('.active-view')?.id || 'unknown',
-      browser: navigator.userAgent,
-      diagnosticsConsent: Boolean(privacyConsent?.diagnostics)
-    } : null
-  };
-  submit.disabled = true;
-  submit.textContent = 'Sending...';
-  const status = await deliverFeedback(payload);
-  submit.disabled = false;
-  submit.textContent = 'Send beta feedback';
+  const category = String(form.get('category'));
+  const diagnostics = form.get('shareDiagnostics') ? `\n\n### Diagnostics\n- Version: ${APP_VERSION}\n- Page: ${$('.active-view')?.id || 'unknown'}\n- Device: ${/Mobi|Android/i.test(navigator.userAgent) ? 'Mobile or tablet' : 'Desktop'}\n- Browser language: ${navigator.language}` : '';
+  const body = `### Feedback\n${String(form.get('message')).trim()}\n\n### Experience rating\n${form.get('rating')}/5${diagnostics}\n\n> Privacy reminder: I reviewed this report and did not include trade data, screenshots, balances, contact details, or other personal information.`;
+  const url = `${GITHUB_REPOSITORY}/issues/new?title=${encodeURIComponent(`[${category}] Beta feedback`)}&body=${encodeURIComponent(body)}&labels=${encodeURIComponent('beta-feedback')}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
   feedbackForm.reset();
   $('#feedback-count').textContent = '0';
   closeModal($('#feedback-modal'));
-  toast(status === 'sent' ? 'Thank you - your beta feedback was sent' : 'Feedback saved to this device and queued for the online beta');
+  toast('Review the GitHub report, then press Submit new issue');
 });
 
 function openGuide() {
@@ -1374,8 +1413,8 @@ function openGuide() {
 }
 
 const legalPages = {
-  privacy: { title: 'Privacy policy', body: '<p>Prototype MK1 stores journal information in this browser on this device. Optional sharing choices are recorded locally. Raw trades, notes, screenshots, balances, and rules are not sent to the owner by this local preview.</p><h3>Your choices</h3><p>You can review consent, export data, create backups, import a copy, or erase local information from Settings.</p>' },
-  terms: { title: 'Terms of use', body: '<p>eLOG Prototype MK1 is provided for evaluation without warranties. Users are responsible for the accuracy of journal entries, protecting their device, and maintaining downloadable backups.</p><p>Paid plans shown in MK1 are previews only and do not create a paid subscription.</p>' },
+  privacy: { title: 'Privacy policy', body: '<p>eLOG Beta stores journal information in this browser on this device. Optional sharing choices are recorded locally. Raw trades, notes, screenshots, balances, and rules are not sent to the owner.</p><h3>GitHub feedback</h3><p>Feedback opens as a public GitHub draft that you review before submission. Never include trading data or personal information.</p><h3>Your choices</h3><p>You can review consent, export data, create backups, import a copy, or erase local information from Settings.</p>' },
+  terms: { title: 'Terms of use', body: '<p>eLOG Beta is provided for evaluation without warranties. Users are responsible for the accuracy of journal entries, protecting their device, and maintaining downloadable backups.</p><p>Paid plans shown in the beta are previews only and do not create a paid subscription.</p>' },
   risk: { title: 'Trading risk disclaimer', body: '<p>eLOG is a journaling and analytics tool—not a broker, investment adviser, signal provider, or guarantee of results. Stocks, options, futures, and forex can produce substantial losses, including losses beyond deposited capital in some products.</p><p>Past performance and journal analytics do not predict future results.</p>' },
   deletion: { title: 'Data deletion instructions', body: '<p>Open Settings → Privacy Center → Delete local data to erase eLOG information, backups, settings, consent, and the local password from this browser.</p><p>This action cannot be reversed unless you first download a data copy. Clearing browser storage can also remove the workspace.</p>' }
 };
@@ -1415,6 +1454,55 @@ $$('.choose-plan').forEach(button => button.addEventListener('click', () => {
 $('#review-button').addEventListener('click', () => toast('Full AI reviews are included in the Pro plan'));
 $('#new-playbook').addEventListener('click', () => toast('Create a reusable setup from the trade log'));
 $('#add-setup').addEventListener('click', () => { openModal('#trade-modal'); toast('Name the setup and save its checklist'); });
+
+let deferredInstallPrompt = null;
+const installButton = $('#install-app');
+const installStatusText = $('#install-status-text');
+const installStatusDot = $('#install-status-dot');
+
+function isStandaloneApp() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function updateInstallStatus() {
+  const installed = isStandaloneApp();
+  installStatusDot.classList.toggle('online', installed);
+  installStatusText.textContent = installed ? 'Installed on this device' : deferredInstallPrompt ? 'Ready to install' : 'Available from your browser menu';
+  installButton.textContent = installed ? 'eLOG is installed' : 'Install eLOG';
+  installButton.disabled = installed;
+}
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  updateInstallStatus();
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  updateInstallStatus();
+  toast('eLOG was installed on this device');
+});
+
+installButton.addEventListener('click', async () => {
+  if (isStandaloneApp()) return;
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    updateInstallStatus();
+    return;
+  }
+  const isAppleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  toast(isAppleMobile ? 'In Safari, tap Share and then Add to Home Screen' : 'Open your browser App menu and choose Install eLOG');
+});
+
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {
+    installStatusText.textContent = 'Offline installation is temporarily unavailable';
+  }));
+}
+updateInstallStatus();
 
 renderFuturesSettings();
 renderTradingSessions();

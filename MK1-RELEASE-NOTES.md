@@ -1,5 +1,7 @@
 # eLOG Prototype MK1
 
+> Historical release notes. Beta 0.2 replaces the MK1 feedback outbox with reviewed GitHub issue submission and adds installable app support.
+
 Release date: July 15, 2026  
 Stage: 1 — local-first product prototype
 
@@ -52,7 +54,7 @@ MK1 stores information in the browser on the current device. It does not yet pro
 
 The privacy popup records preferences locally but transmits no customer information.
 
-Feedback submitted from the local file preview is saved in an on-device outbox. When the online application provides `/api/feedback`, the same form will send submissions to the owner endpoint and fall back to the outbox if delivery fails.
+MK1 originally prepared a local feedback outbox for a future endpoint. Beta 0.2 supersedes that design with a GitHub report the tester reviews before public submission.
 
 ## Stage 2 production work
 

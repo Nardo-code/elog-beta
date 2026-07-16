@@ -1,0 +1,49 @@
+name: Beta feedback
+description: Share an idea or usability observation about eLOG.
+title: "[Beta feedback] "
+labels: ["beta-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing eLOG. GitHub issues are public. Do not include trades, screenshots, balances, email addresses, broker details, or other personal information.
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feedback type
+      options:
+        - Idea
+        - Usability
+        - Analytics request
+        - Design
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: feedback
+    attributes:
+      label: What should we keep or improve?
+      placeholder: Describe the experience without including private trading information.
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - Windows
+        - macOS
+        - Android phone
+        - Android tablet
+        - iPhone
+        - iPad
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed private trading and personal information from this report.
+          required: true
