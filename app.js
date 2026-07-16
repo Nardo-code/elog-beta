@@ -1107,6 +1107,64 @@ async function derivePassword(password, salt) {
   return bytesToBase64(new Uint8Array(bits));
 }
 
+const PASSWORD_CREDENTIAL_VERSION = 2;
+const PASSWORD_ITERATIONS = 210000;
+const PASSWORD_MARKER = 'eLOG device password verified';
+
+async function derivePasswordKey(password, salt, iterations = PASSWORD_ITERATIONS) {
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: base64ToBytes(salt), iterations, hash: 'SHA-256' },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function createPasswordCredentials(password) {
+  const salt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await derivePasswordKey(password, salt);
+  const encryptedMarker = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    new TextEncoder().encode(PASSWORD_MARKER)
+  );
+  return {
+    version: PASSWORD_CREDENTIAL_VERSION,
+    iterations: PASSWORD_ITERATIONS,
+    salt,
+    iv: bytesToBase64(iv),
+    verifier: bytesToBase64(new Uint8Array(encryptedMarker))
+  };
+}
+
+async function verifyDevicePassword(password, credentials = securityCredentials) {
+  if (!credentials?.salt || typeof password !== 'string') return false;
+  if (credentials.version === PASSWORD_CREDENTIAL_VERSION && credentials.iv && credentials.verifier) {
+    try {
+      const key = await derivePasswordKey(password, credentials.salt, Number(credentials.iterations) || PASSWORD_ITERATIONS);
+      const marker = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: base64ToBytes(credentials.iv) },
+        key,
+        base64ToBytes(credentials.verifier)
+      );
+      return new TextDecoder().decode(marker) === PASSWORD_MARKER;
+    } catch {
+      return false;
+    }
+  }
+  if (!credentials.hash) return false;
+  const legacyHash = await derivePassword(password, credentials.salt);
+  const valid = legacyHash === credentials.hash;
+  if (valid) {
+    securityCredentials = await createPasswordCredentials(password);
+    localStorage.setItem('edgelog-security', JSON.stringify(securityCredentials));
+  }
+  return valid;
+}
+
 function updateSecurityUI() {
   const enabled = Boolean(securityCredentials);
   $('#security-status-dot').classList.toggle('enabled', enabled);
@@ -1149,12 +1207,9 @@ $('#security-form').addEventListener('submit', async event => {
   submit.textContent = 'Securing...';
   try {
     if (securityCredentials) {
-      const currentHash = await derivePassword(currentPassword, securityCredentials.salt);
-      if (currentHash !== securityCredentials.hash) { toast('Current password is incorrect'); return; }
+      if (!await verifyDevicePassword(currentPassword)) { toast('Current password is incorrect'); return; }
     }
-    const salt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
-    const hash = await derivePassword(newPassword, salt);
-    securityCredentials = { salt, hash };
+    securityCredentials = await createPasswordCredentials(newPassword);
     localStorage.setItem('edgelog-security', JSON.stringify(securityCredentials));
     sessionStorage.setItem('edgelog-unlocked', 'true');
     event.target.reset();
@@ -1175,8 +1230,7 @@ $('#unlock-form').addEventListener('submit', async event => {
   submit.disabled = true;
   submit.textContent = 'Checking...';
   try {
-    const enteredHash = await derivePassword(event.target.elements.password.value, securityCredentials.salt);
-    if (enteredHash === securityCredentials.hash) {
+    if (await verifyDevicePassword(event.target.elements.password.value)) {
       sessionStorage.setItem('edgelog-unlocked', 'true');
       hideAppLock();
     } else {
@@ -1531,9 +1585,7 @@ function createCloudSafetyBackup(name = 'Before cloud restore') {
 async function setInitialDevicePassword(password) {
   if (securityCredentials) return true;
   if (typeof password !== 'string' || password.length < 8) throw new Error('Use at least 8 characters');
-  const salt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
-  const hash = await derivePassword(password, salt);
-  securityCredentials = { salt, hash };
+  securityCredentials = await createPasswordCredentials(password);
   localStorage.setItem('edgelog-security', JSON.stringify(securityCredentials));
   sessionStorage.setItem('edgelog-unlocked', 'true');
   updateSecurityUI();
